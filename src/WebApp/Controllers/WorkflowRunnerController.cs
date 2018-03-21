@@ -52,7 +52,6 @@ namespace WebApp.Controllers
         [HttpPost]
         public bool ExecuteWorkflow(Guid entityId, Guid runnerId)
         {
-
             var runner = ServiceContext.CreateQuery("dynpca_workflowrunner")
                 .SingleOrDefault(a => a.GetAttributeValue<Guid>("dynpca_workflowrunnerid") == runnerId);
 
@@ -61,7 +60,7 @@ namespace WebApp.Controllers
 
             // validate entity id record exists
             var entityLogicalName = runner.GetAttributeValue<string>("dynpca_entitylogicalname");
-            var entityRecord = ServiceContext.CreateQuery(entityLogicalName).SingleOrDefault(a => a.Id == entityId);
+            var entityRecord = ServiceContext.CreateQuery("account").SingleOrDefault(a => a.Id == entityId);
 
             if (entityRecord == null)
                 return false;
@@ -70,29 +69,44 @@ namespace WebApp.Controllers
 
             ExecuteWorkflowRequest request;
             ExecuteWorkflowResponse response;
+            var identity = (ClaimsIdentity)User.Identity;
+            var allowRun = false;
 
             if (runner.GetAttributeValue<bool>("dynpca_allowanonymous"))
             {
-                request = new ExecuteWorkflowRequest()
-                {
-                    WorkflowId = workflowId,
-                    EntityId = entityId
-                };
-
-                response = (ExecuteWorkflowResponse)OrgService.Execute(request);
-                return true;
+                allowRun = true;
             }
-
-
-            var identity = (ClaimsIdentity)User.Identity;
-
-            if (!runner.GetAttributeValue<bool>("dynpca_allowanonymous") && !identity.IsAuthenticated)
+            else if (!runner.GetAttributeValue<bool>("dynpca_allowanonymous") && identity.IsAuthenticated)
             {
                 var contact = OrgService.GetContact(identity);
 
+                // TODO: check if contact is associated to workflow runner
+                if (contact != null)
+                {
+                    allowRun = true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            else
+            {
                 return false;
             }
-            
+
+            if (allowRun)
+            {
+                request = new ExecuteWorkflowRequest()
+                {
+                    EntityId = entityId,
+                    WorkflowId = workflowId
+                };
+
+                response = (ExecuteWorkflowResponse)OrgService.Execute(request);
+
+                return true;
+            }
             return false;
         }
     }
